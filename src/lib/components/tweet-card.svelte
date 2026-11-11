@@ -3,6 +3,7 @@
 	import MessageCircle from '@lucide/svelte/icons/message-circle';
 	import Quote from '@lucide/svelte/icons/quote';
 	import Repeat2 from '@lucide/svelte/icons/repeat-2';
+	import Lightbox from '#lib/components/lightbox.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { formatDateTime, formatNumber } from '#lib/format.ts';
 	import { linkify } from '#lib/linkify.ts';
@@ -19,10 +20,17 @@
 
 	const presented = $derived(presentTweet(tweet));
 	const many = $derived(tweet.media.length > 1);
+
 	const segments = $derived(linkify(presented.text));
 
 	// Media that only exists on X's servers disappears when the tweet is deleted there.
 	let missing = $state.raw<string[]>([]);
+
+	// Photos open enlarged inside the page; the lightbox pages through the ones that still load.
+	const photos = $derived(
+		tweet.media.filter((media) => !media.isVideo && !missing.includes(media.key))
+	);
+	let zoomed = $state<number | null>(null);
 
 	/**
 	 * Loads a video only while it is near the viewport. Browsers cap the number of live media
@@ -140,7 +148,13 @@
 						href={media.src}
 						target="_blank"
 						rel="external noopener noreferrer"
-						class={[tile, 'block']}
+						class={[tile, 'block cursor-zoom-in']}
+						onclick={(event) => {
+							// Modified clicks keep opening the file in a new tab.
+							if (event.ctrlKey || event.metaKey || event.shiftKey) return;
+							event.preventDefault();
+							zoomed = photos.findIndex((photo) => photo.key === media.key);
+						}}
 					>
 						<img
 							class={fit}
@@ -154,6 +168,14 @@
 				{/if}
 			{/each}
 		</div>
+	{/if}
+
+	{#if zoomed !== null && photos.length > 0}
+		<Lightbox
+			images={photos.map((photo) => photo.src)}
+			bind:index={() => zoomed ?? 0, (value) => (zoomed = value)}
+			onclose={() => (zoomed = null)}
+		/>
 	{/if}
 
 	<footer class="flex items-center gap-4 text-sm text-muted-foreground">
