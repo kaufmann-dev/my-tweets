@@ -9,6 +9,33 @@
 	let { tweet }: { tweet: TweetView } = $props();
 
 	const segments = $derived(linkify(tweet.text));
+	// Media that only exists on X's servers disappears when the tweet is deleted there.
+	let missing = $state.raw<string[]>([]);
+
+	/**
+	 * Loads a video only while it is near the viewport. Browsers cap the number of live media
+	 * players per page, which a long timeline of preloaded videos would exceed.
+	 */
+	function lazyVideo(src: string) {
+		return (node: HTMLVideoElement) => {
+			const observer = new IntersectionObserver(
+				(entries) => {
+					const visible = entries.some((entry) => entry.isIntersecting);
+					if (visible && !node.hasAttribute('src')) {
+						// Seeking to 0.1 s shows the first frame as the preview.
+						node.src = `${src}#t=0.1`;
+					} else if (!visible && node.hasAttribute('src') && node.paused) {
+						node.removeAttribute('src');
+						node.load();
+					}
+				},
+				{ rootMargin: '1500px 0px' }
+			);
+			observer.observe(node);
+			return () => observer.disconnect();
+		};
+	}
+
 	const kindLabel = $derived(
 		tweet.kind === 'reply' ? 'Reply' : tweet.kind === 'retweet' ? 'Retweet' : null
 	);
@@ -66,16 +93,22 @@
 	{#if tweet.media.length > 0}
 		<div class={['grid gap-1.5', tweet.media.length > 1 && 'grid-cols-2']}>
 			{#each tweet.media as media (media.key)}
-				{#if media.isVideo}
-					<!-- Loading metadata and seeking to 0.1 s shows the first frame as the preview, without
-					     relying on thumbnails hosted by X, which disappear with deleted tweets. -->
-					<!-- svelte-ignore a11y_media_has_caption -->
+				{#if missing.includes(media.key)}
+					<p
+						class="flex min-h-16 items-center justify-center rounded-lg border border-dashed px-3 text-center text-sm text-muted-foreground"
+					>
+						{media.isVideo ? 'Video' : 'Photo'} not in the archive and deleted from X
+					</p>
+				{:else if media.isVideo}
 					<video
 						class="max-h-[32rem] w-full rounded-lg border bg-muted"
-						src={`${media.src}#t=0.1`}
 						controls
 						preload="metadata"
 						playsinline
+						onerror={(event) => {
+							if (event.currentTarget.hasAttribute('src')) missing = [...missing, media.key];
+						}}
+						{@attach lazyVideo(media.src)}
 					></video>
 				{:else}
 					<a href={media.src} target="_blank" rel="external noopener noreferrer" class="block">
@@ -85,9 +118,7 @@
 							alt=""
 							loading="lazy"
 							referrerpolicy={media.local ? undefined : 'no-referrer'}
-							onerror={(event) => {
-								(event.currentTarget as HTMLImageElement).closest('a')?.setAttribute('hidden', '');
-							}}
+							onerror={() => (missing = [...missing, media.key])}
 						/>
 					</a>
 				{/if}

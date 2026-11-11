@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { lastDayOfMonth, monthRange } from './format.ts';
 import { linkify } from './linkify.ts';
 import { safeRedirectTarget } from './redirect.ts';
 import { parseRange } from './server/range.ts';
@@ -79,8 +80,26 @@ describe('tweet filters', () => {
 		expect(timeZoneSchema.safeParse("UTC'; drop table tweet; --").success).toBe(false);
 	});
 
+	it('accepts the like and retweet sorts', () => {
+		expect(filtersFromParams(new URLSearchParams('sort=likes')).sort).toBe('likes');
+		expect(filtersFromParams(new URLSearchParams('sort=retweets')).sort).toBe('retweets');
+	});
+
 	it('splits search terms', () => {
 		expect(searchTerms('  a  b a ')).toEqual(['a', 'b']);
+	});
+});
+
+describe('month helpers', () => {
+	it('lists every month in a range, across years', () => {
+		expect(monthRange('2020-11', '2021-02')).toEqual(['2020-11', '2020-12', '2021-01', '2021-02']);
+		expect(monthRange('2021-05', '2021-05')).toEqual(['2021-05']);
+	});
+
+	it('finds the last day of a month', () => {
+		expect(lastDayOfMonth('2024-02')).toBe('2024-02-29');
+		expect(lastDayOfMonth('2023-02')).toBe('2023-02-28');
+		expect(lastDayOfMonth('2021-12')).toBe('2021-12-31');
 	});
 });
 

@@ -15,6 +15,7 @@
 
 	const links = [
 		{ href: resolve('/(app)'), label: 'Tweets' },
+		{ href: resolve('/(app)/stats'), label: 'Stats' },
 		{ href: resolve('/(app)/import'), label: 'Import' },
 		{ href: resolve('/(app)/export'), label: 'Export' }
 	];

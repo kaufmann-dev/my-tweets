@@ -178,6 +178,7 @@ Use modern Svelte replacements over legacy features:
 - Use CSS custom properties for parent-to-child styling boundaries.
 - Use `createContext` for typed context instead of unscoped shared module state when state must be per request or per tree.
 - Use `await` expressions and `hydratable` where they simplify data loading; `compilerOptions.experimental.async` is already enabled in `vite.config.ts`.
+- Do not `await` a query inside a `$derived` whose arguments the user can change (filters, URL parameters). In Svelte 5.57 a change that arrives while the previous request is in flight freezes the tab (`docs/bugs/timeline-freezes-on-overlapping-filter-changes.md`). Load such data in `afterNavigate` into `$state.raw` and drop superseded responses, as the timeline and stats pages do.
 
 ### Legacy Features to Avoid in New Code
 

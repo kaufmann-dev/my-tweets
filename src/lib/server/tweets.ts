@@ -50,7 +50,10 @@ function filterConditions(filters: TweetFilters, timeZone: string): SQL[] {
 	return conditions;
 }
 
-const CURSOR = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)_(\d+)$/;
+/** `<createdAt>_<id>`, prefixed with `<count>_` when sorting by likes or retweets. */
+const CURSOR = /^(?:(\d{1,10})_)?(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)_(\d+)$/;
+
+const COUNT_SORTS = { likes: tweet.favoriteCount, retweets: tweet.retweetCount } as const;
 
 function toMediaView(media: typeof tweetMedia.$inferSelect): TweetMediaView | null {
 	if (media.fileName) {
@@ -76,19 +79,27 @@ export async function listTweets(
 	cursor: string | null,
 	limit = PAGE_SIZE
 ): Promise<TweetPage> {
-	const newestFirst = filters.sort === 'newest';
 	const conditions = filterConditions(filters, timeZone);
+	// Ties in a like or retweet count fall back to newest first, so every sort is a total order.
+	const countColumn =
+		filters.sort === 'likes' || filters.sort === 'retweets' ? COUNT_SORTS[filters.sort] : null;
+	const ascending = filters.sort === 'oldest';
 	const position = cursor ? CURSOR.exec(cursor) : null;
 	if (position) {
-		const [, createdAt, id] = position;
-		conditions.push(
-			newestFirst
-				? sql`(${tweet.createdAt}, ${tweet.id}) < (${createdAt}::timestamptz, ${id})`
-				: sql`(${tweet.createdAt}, ${tweet.id}) > (${createdAt}::timestamptz, ${id})`
-		);
+		const [, counted, createdAt, id] = position;
+		if (countColumn && counted !== undefined)
+			conditions.push(
+				sql`(${countColumn}, ${tweet.createdAt}, ${tweet.id}) < (${counted}::int, ${createdAt}::timestamptz, ${id})`
+			);
+		else if (!countColumn)
+			conditions.push(
+				ascending
+					? sql`(${tweet.createdAt}, ${tweet.id}) > (${createdAt}::timestamptz, ${id})`
+					: sql`(${tweet.createdAt}, ${tweet.id}) < (${createdAt}::timestamptz, ${id})`
+			);
 	}
 
-	const order = newestFirst ? desc : asc;
+	const order = ascending ? asc : desc;
 	const rows = await db
 		.select({
 			id: tweet.id,
@@ -107,7 +118,7 @@ export async function listTweets(
 		.from(tweet)
 		.innerJoin(twitterAccount, eq(twitterAccount.id, tweet.accountId))
 		.where(and(...conditions))
-		.orderBy(order(tweet.createdAt), order(tweet.id))
+		.orderBy(...(countColumn ? [desc(countColumn)] : []), order(tweet.createdAt), order(tweet.id))
 		.limit(limit + 1);
 
 	const pageRows = rows.slice(0, limit);
@@ -134,9 +145,18 @@ export async function listTweets(
 			.filter((media) => media !== null)
 	}));
 	const last = items.at(-1);
+	const lastCount =
+		filters.sort === 'likes'
+			? last?.favoriteCount
+			: filters.sort === 'retweets'
+				? last?.retweetCount
+				: undefined;
 	return {
 		items,
-		nextCursor: rows.length > limit && last ? `${last.createdAt}_${last.id}` : null
+		nextCursor:
+			rows.length > limit && last
+				? `${lastCount === undefined ? '' : `${lastCount}_`}${last.createdAt}_${last.id}`
+				: null
 	};
 }
 

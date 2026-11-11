@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const KIND_FILTERS = ['all', 'tweet', 'reply', 'retweet'] as const;
-export const SORTS = ['newest', 'oldest'] as const;
+export const SORTS = ['newest', 'oldest', 'likes', 'retweets'] as const;
 
 const isoDay = z
 	.string()

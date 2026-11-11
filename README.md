@@ -10,7 +10,9 @@ timeline, keeps tweets that were later deleted on X, serves the archived photos 
 exports everything as one backup file.
 
 - Search, filter by account, type (tweets, replies, retweets), media and a date range (whole days
-  in your time zone), newest or oldest first.
+  in your time zone); sort by newest, oldest, most liked or most retweeted.
+- Stats per account or for everything: totals, tweets per month, time of day, day of week, who you
+  replied to most and your most liked tweets.
 - Import new archives by uploading the zip from X. Tweets are merged by id and never removed.
 - Export the whole archive as a zip with all media, which can be imported again to restore it, or
   as a single JSON file.

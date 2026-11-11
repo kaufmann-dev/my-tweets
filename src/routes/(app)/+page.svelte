@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { afterNavigate, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import * as Alert from '#lib/components/ui/alert/index.js';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import TweetCard from '#lib/components/tweet-card.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -10,6 +11,7 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as NativeSelect from '#lib/components/ui/native-select/index.js';
+	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import * as ToggleGroup from '#lib/components/ui/toggle-group/index.js';
@@ -19,10 +21,11 @@
 		filtersFromParams,
 		filtersToParams,
 		KIND_FILTERS,
+		SORTS,
 		type TweetFilters
 	} from '#lib/tweet-filters.ts';
-	import type { TweetPage } from '#lib/tweet-types.ts';
-	import { countTweets, getAccounts, getArchiveStats, listTweets } from './data.remote';
+	import type { AccountOption, TweetPage } from '#lib/tweet-types.ts';
+	import { countTweets, getAccounts, listTweets } from './data.remote';
 
 	const KIND_LABELS: Record<TweetFilters['kind'], string> = {
 		all: 'All',
@@ -31,39 +34,66 @@
 		retweet: 'Retweets'
 	};
 
+	const SORT_LABELS: Record<TweetFilters['sort'], string> = {
+		newest: 'Newest first',
+		oldest: 'Oldest first',
+		likes: 'Most liked',
+		retweets: 'Most retweeted'
+	};
+
 	// Date ranges are whole days in the viewer's time zone.
 	const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 	const filters = $derived(filtersFromParams(page.url.searchParams));
-	const filterKey = $derived(filtersToParams(filters).toString());
-	const hasFilters = $derived(filterKey !== '');
+	const hasFilters = $derived(filtersToParams(filters).toString() !== '');
 
-	const [firstPage, total, accounts, stats] = $derived(
-		await Promise.all([
-			listTweets({ ...filters, timeZone, cursor: null }),
-			countTweets({ ...filters, timeZone }),
-			getAccounts(),
-			getArchiveStats()
-		])
-	);
+	// Results are loaded per navigation instead of with `await` in a `$derived`: with Svelte 5.57,
+	// a filter change that arrives while the previous one is still loading sends the async batch
+	// scheduler into an endless loop that freezes the tab.
+	let view = $state.raw<{ filters: TweetFilters; total: number; pages: TweetPage[] } | null>(null);
+	let accounts = $state.raw<AccountOption[]>([]);
+	let loading = $state(true);
+	let loadFailed = $state(false);
+	let latestLoad = 0;
 
-	// Pages loaded with "Load more" belong to the filters they were loaded for.
-	let extra = $state.raw<{ key: string; pages: TweetPage[] }>({ key: '', pages: [] });
-	const extraPages = $derived(extra.key === filterKey ? extra.pages : []);
-	const items = $derived([firstPage, ...extraPages].flatMap((result) => result.items));
-	const nextCursor = $derived((extraPages.at(-1) ?? firstPage).nextCursor);
+	async function load() {
+		const current = ++latestLoad;
+		const requested = filters;
+		loading = true;
+		loadFailed = false;
+		try {
+			const [first, total, accountList] = await Promise.all([
+				listTweets({ ...requested, timeZone, cursor: null }),
+				countTweets({ ...requested, timeZone }),
+				getAccounts()
+			]);
+			if (current !== latestLoad) return;
+			view = { filters: requested, total, pages: [first] };
+			accounts = accountList;
+		} catch {
+			if (current === latestLoad) loadFailed = true;
+		} finally {
+			if (current === latestLoad) loading = false;
+		}
+	}
+
+	// Runs on mount and after every filter change, including back and forward.
+	afterNavigate(() => void load());
+
+	const items = $derived(view?.pages.flatMap((result) => result.items) ?? []);
+	const nextCursor = $derived(view?.pages.at(-1)?.nextCursor ?? null);
 	let loadingMore = $state(false);
 	let loadMoreFailed = $state(false);
 
 	async function loadMore() {
-		if (!nextCursor || loadingMore) return;
-		const key = filterKey;
-		const cursor = nextCursor;
+		const base = view;
+		if (!base || !nextCursor || loadingMore) return;
 		loadingMore = true;
 		loadMoreFailed = false;
 		try {
-			const next = await listTweets({ ...filters, timeZone, cursor });
-			if (key === filterKey) extra = { key, pages: [...extraPages, next] };
+			const next = await listTweets({ ...base.filters, timeZone, cursor: nextCursor });
+			// Ignore the page when the filters changed while it was loading.
+			if (view === base) view = { ...base, pages: [...base.pages, next] };
 		} catch {
 			loadMoreFailed = true;
 		} finally {
@@ -82,25 +112,30 @@
 		return () => observer.disconnect();
 	}
 
-	function update(patch: Partial<TweetFilters>, replace = false) {
-		const query = filtersToParams({ ...filters, ...patch }).toString();
-		// The pathname form: route IDs with a query keep the `(app)` group in SvelteKit 3.2.
-		return goto(query ? resolve(`?${query}`) : resolve('/(app)'), { reset: false, replace });
-	}
-
 	let searchDraft = $state<string | null>(null);
 	let searchTimer: ReturnType<typeof setTimeout> | undefined;
+
+	async function update(patch: Partial<TweetFilters>, replace = false) {
+		// A search still waiting for its debounce goes along with any other filter change.
+		clearTimeout(searchTimer);
+		const draft = searchDraft;
+		const query = filtersToParams({
+			...filters,
+			...(draft === null ? {} : { q: draft }),
+			...patch
+		}).toString();
+		// The pathname form: route IDs with a query keep the `(app)` group in SvelteKit 3.2.
+		await goto(query ? resolve(`?${query}`) : resolve('/(app)'), { reset: false, replace });
+		if (searchDraft === draft) searchDraft = null;
+	}
 
 	function search(value: string) {
 		searchDraft = value;
 		clearTimeout(searchTimer);
-		searchTimer = setTimeout(async () => {
-			await update({ q: value }, true);
-			if (searchDraft === value) searchDraft = null;
-		}, 300);
+		searchTimer = setTimeout(() => void update({}, true), 300);
 	}
 
-	function accountLabel(account: (typeof accounts)[number]) {
+	function accountLabel(account: AccountOption) {
 		const former = account.usernames.filter((name) => name !== account.username);
 		const formerText = former.length > 0 ? ` (formerly @${former.join(', @')})` : '';
 		return `@${account.username}${formerText} · ${formatNumber(account.tweets)}`;
@@ -186,8 +221,9 @@
 				value={filters.sort}
 				onchange={(event) => update({ sort: event.currentTarget.value as TweetFilters['sort'] })}
 			>
-				<NativeSelect.Option value="newest">Newest first</NativeSelect.Option>
-				<NativeSelect.Option value="oldest">Oldest first</NativeSelect.Option>
+				{#each SORTS as sort (sort)}
+					<NativeSelect.Option value={sort}>{SORT_LABELS[sort]}</NativeSelect.Option>
+				{/each}
 			</NativeSelect.Root>
 
 			<div class="flex h-8 items-center gap-2 px-1">
@@ -202,10 +238,12 @@
 
 	<div class="flex min-h-7 items-center justify-between gap-2 text-sm text-muted-foreground">
 		<p aria-live="polite" class="flex items-center gap-2">
-			{formatNumber(total)}
-			{total === 1 ? 'tweet' : 'tweets'}
-			{#if $effect.pending()}
-				<Spinner class="size-3.5" aria-label="Updating" />
+			{#if view}
+				{formatNumber(view.total)}
+				{view.total === 1 ? 'tweet' : 'tweets'}
+			{/if}
+			{#if loading}
+				<Spinner class="size-3.5" aria-label="Loading" />
 			{/if}
 		</p>
 		{#if hasFilters}
@@ -215,24 +253,42 @@
 		{/if}
 	</div>
 
-	{#if items.length === 0}
+	{#if loadFailed}
+		<Alert.Root variant="destructive">
+			<Alert.Title>Tweets could not be loaded</Alert.Title>
+			<Alert.Description>
+				<p>Check your connection and try again.</p>
+				<Button variant="outline" size="sm" class="mt-2" onclick={load}>Try again</Button>
+			</Alert.Description>
+		</Alert.Root>
+	{/if}
+
+	{#if !view}
+		{#if loading}
+			<div class="flex flex-col gap-3" aria-hidden="true">
+				<Skeleton class="h-28 w-full" />
+				<Skeleton class="h-28 w-full" />
+				<Skeleton class="h-28 w-full" />
+			</div>
+		{/if}
+	{:else if items.length === 0}
 		<Empty.Root class="border">
 			<Empty.Header>
-				{#if stats.tweets === 0}
+				{#if hasFilters}
+					<Empty.Title>No matching tweets</Empty.Title>
+					<Empty.Description>Try a different search or clear the filters.</Empty.Description>
+				{:else}
 					<Empty.Title>No tweets yet</Empty.Title>
 					<Empty.Description>
 						Import a Twitter archive or a my-tweets export to fill your archive.
 					</Empty.Description>
-				{:else}
-					<Empty.Title>No matching tweets</Empty.Title>
-					<Empty.Description>Try a different search or clear the filters.</Empty.Description>
 				{/if}
 			</Empty.Header>
 			<Empty.Content>
-				{#if stats.tweets === 0}
-					<Button href={resolve('/(app)/import')}>Import data</Button>
-				{:else}
+				{#if hasFilters}
 					<Button variant="outline" onclick={() => update(DEFAULT_FILTERS)}>Clear filters</Button>
+				{:else}
+					<Button href={resolve('/(app)/import')}>Import data</Button>
 				{/if}
 			</Empty.Content>
 		</Empty.Root>

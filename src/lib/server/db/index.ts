@@ -5,7 +5,8 @@ import { DATABASE_URL } from '$app/env/private';
 
 if (!DATABASE_URL) throw new Error('DATABASE_URL is not set');
 
-const client = postgres(DATABASE_URL);
+// The migrator's `create ... if not exists` statements raise a notice on every start.
+const client = postgres(DATABASE_URL, { onnotice: () => {} });
 
 // adapter-node emits this after closing the HTTP server on SIGTERM/SIGINT. Open pool connections
 // would otherwise keep the process alive until the container runtime kills it.
