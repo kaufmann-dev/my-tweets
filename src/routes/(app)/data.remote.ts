@@ -5,25 +5,30 @@ import { requireUser } from '#lib/server/require-user.ts';
 import { tweetStats } from '#lib/server/stats.ts';
 import {
 	archiveStats,
-	countTweets as countMatchingTweets,
 	listAccounts,
-	listTweets as listTweetPage
+	listTweets as listTweetPage,
+	tweetMonths
 } from '#lib/server/tweets.ts';
 import { timeZoneSchema, tweetFiltersSchema } from '#lib/tweet-filters.ts';
 
 export const listTweets = query(
-	tweetFiltersSchema.extend({ timeZone: timeZoneSchema, cursor: z.string().max(100).nullable() }),
-	async ({ timeZone, cursor, ...filters }) => {
+	tweetFiltersSchema.extend({
+		timeZone: timeZoneSchema,
+		cursor: z.string().max(100).nullable(),
+		at: z.iso.datetime().nullable().default(null),
+		direction: z.enum(['next', 'previous']).default('next')
+	}),
+	async ({ timeZone, cursor, at, direction, ...filters }) => {
 		requireUser();
-		return listTweetPage(filters, timeZone, cursor);
+		return listTweetPage(filters, timeZone, { cursor, at, direction });
 	}
 );
 
-export const countTweets = query(
+export const getTweetMonths = query(
 	tweetFiltersSchema.extend({ timeZone: timeZoneSchema }),
 	async ({ timeZone, ...filters }) => {
 		requireUser();
-		return countMatchingTweets(filters, timeZone);
+		return tweetMonths(filters, timeZone);
 	}
 );
 

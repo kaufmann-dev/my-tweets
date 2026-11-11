@@ -1,9 +1,11 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { afterNavigate, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import SearchIcon from '@lucide/svelte/icons/search';
+	import TimelineScrubber from '#lib/components/timeline-scrubber.svelte';
 	import TweetCard from '#lib/components/tweet-card.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Empty from '#lib/components/ui/empty/index.js';
@@ -24,8 +26,9 @@
 		SORTS,
 		type TweetFilters
 	} from '#lib/tweet-filters.ts';
-	import type { AccountOption, TweetPage } from '#lib/tweet-types.ts';
-	import { countTweets, getAccounts, listTweets } from './data.remote';
+	import { monthOffsets, orderMonths } from '#lib/timeline-scrubber.ts';
+	import type { AccountOption, TweetMonth, TweetPage } from '#lib/tweet-types.ts';
+	import { getAccounts, getTweetMonths, listTweets } from './data.remote';
 
 	const KIND_LABELS: Record<TweetFilters['kind'], string> = {
 		all: 'All',
@@ -48,10 +51,24 @@
 	const filters = $derived(filtersFromParams(page.url.searchParams));
 	const hasFilters = $derived(filtersToParams(filters).toString() !== '');
 
+	/** Height of the sticky header; the tweet just below it is the current scroll position. */
+	const HEADER_HEIGHT = 56;
+
+	interface TimelineView {
+		filters: TweetFilters;
+		/** Months in display order, with the number of tweets shown before each. */
+		months: TweetMonth[];
+		offsets: number[];
+		total: number;
+		pages: TweetPage[];
+		/** Tweets that come before the first loaded one, after a jump into the middle. */
+		offset: number;
+	}
+
 	// Results are loaded per navigation instead of with `await` in a `$derived`: with Svelte 5.57,
 	// a filter change that arrives while the previous one is still loading sends the async batch
 	// scheduler into an endless loop that freezes the tab.
-	let view = $state.raw<{ filters: TweetFilters; total: number; pages: TweetPage[] } | null>(null);
+	let view = $state.raw<TimelineView | null>(null);
 	let accounts = $state.raw<AccountOption[]>([]);
 	let loading = $state(true);
 	let loadFailed = $state(false);
@@ -63,14 +80,24 @@
 		loading = true;
 		loadFailed = false;
 		try {
-			const [first, total, accountList] = await Promise.all([
+			const [first, monthList, accountList] = await Promise.all([
 				listTweets({ ...requested, timeZone, cursor: null }),
-				countTweets({ ...requested, timeZone }),
+				getTweetMonths({ ...requested, timeZone }),
 				getAccounts()
 			]);
 			if (current !== latestLoad) return;
-			view = { filters: requested, total, pages: [first] };
+			const months = orderMonths(monthList, requested.sort);
+			view = {
+				filters: requested,
+				months,
+				offsets: monthOffsets(months),
+				total: months.reduce((sum, month) => sum + month.total, 0),
+				pages: [first],
+				offset: 0
+			};
 			accounts = accountList;
+			await tick();
+			trackPosition();
 		} catch {
 			if (current === latestLoad) loadFailed = true;
 		} finally {
@@ -83,8 +110,18 @@
 
 	const items = $derived(view?.pages.flatMap((result) => result.items) ?? []);
 	const nextCursor = $derived(view?.pages.at(-1)?.nextCursor ?? null);
+	const previousCursor = $derived(
+		view && view.offset > 0 ? (view.pages[0]?.previousCursor ?? null) : null
+	);
+	const showScrubber = $derived(
+		view !== null &&
+			(view.filters.sort === 'newest' || view.filters.sort === 'oldest') &&
+			view.months.length >= 2
+	);
 	let loadingMore = $state(false);
 	let loadMoreFailed = $state(false);
+	let loadingPrevious = $state(false);
+	let loadPreviousFailed = $state(false);
 
 	async function loadMore() {
 		const base = view;
@@ -102,15 +139,100 @@
 		}
 	}
 
-	function autoLoad(node: HTMLElement) {
-		const observer = new IntersectionObserver(
-			(entries) => {
-				if (entries.some((entry) => entry.isIntersecting) && !loadMoreFailed) void loadMore();
-			},
-			{ rootMargin: '800px 0px' }
-		);
-		observer.observe(node);
-		return () => observer.disconnect();
+	async function loadPrevious() {
+		const base = view;
+		if (!base || !previousCursor || loadingPrevious) return;
+		loadingPrevious = true;
+		loadPreviousFailed = false;
+		try {
+			const previous = await listTweets({
+				...base.filters,
+				timeZone,
+				cursor: previousCursor,
+				direction: 'previous'
+			});
+			if (view !== base) return;
+			// Keep the tweets on screen in place while the new ones are added above them.
+			const anchor = list?.firstElementChild;
+			const before = anchor?.getBoundingClientRect().top ?? 0;
+			view = {
+				...base,
+				pages: [previous, ...base.pages],
+				offset: Math.max(base.offset - previous.items.length, 0)
+			};
+			await tick();
+			if (anchor?.isConnected) window.scrollBy(0, anchor.getBoundingClientRect().top - before);
+			trackPosition();
+		} catch {
+			loadPreviousFailed = true;
+		} finally {
+			loadingPrevious = false;
+		}
+	}
+
+	async function jump(index: number) {
+		const base = view;
+		const month = base?.months[index];
+		if (!base || !month) return;
+		const current = ++latestLoad;
+		loading = true;
+		loadFailed = false;
+		try {
+			// The first month starts at the top; others start at their first tweet in display order.
+			const at = index === 0 ? null : base.filters.sort === 'newest' ? month.end : month.start;
+			const page = await listTweets({ ...base.filters, timeZone, cursor: null, at });
+			if (current !== latestLoad) return;
+			view = { ...base, pages: [page], offset: index === 0 ? 0 : (base.offsets[index] ?? 0) };
+			loadMoreFailed = false;
+			loadPreviousFailed = false;
+			await tick();
+			list?.scrollIntoView({ block: 'start' });
+			trackPosition();
+		} catch {
+			if (current === latestLoad) loadFailed = true;
+		} finally {
+			if (current === latestLoad) loading = false;
+		}
+	}
+
+	function autoLoad(onVisible: () => void) {
+		return (node: HTMLElement) => {
+			const observer = new IntersectionObserver(
+				(entries) => {
+					if (entries.some((entry) => entry.isIntersecting)) onVisible();
+				},
+				{ rootMargin: '800px 0px' }
+			);
+			observer.observe(node);
+			return () => observer.disconnect();
+		};
+	}
+
+	let list = $state<HTMLElement>();
+	/** Share of the timeline above the top of the viewport, 0–1. */
+	let position = $state(0);
+	let positionFrame = 0;
+
+	function trackPosition() {
+		const cards = list?.children;
+		if (!view || !cards || cards.length === 0 || view.total === 0) return;
+		// The first card that reaches below the header.
+		let low = 0;
+		let high = cards.length - 1;
+		while (low < high) {
+			const middle = Math.floor((low + high) / 2);
+			if (cards[middle]!.getBoundingClientRect().bottom > HEADER_HEIGHT) high = middle;
+			else low = middle + 1;
+		}
+		const rect = cards[low]!.getBoundingClientRect();
+		const within = rect.height > 0 ? (HEADER_HEIGHT - rect.top) / rect.height : 0;
+		const shown = view.offset + low + Math.min(Math.max(within, 0), 1);
+		position = Math.min(Math.max(shown / view.total, 0), 1);
+	}
+
+	function schedulePosition() {
+		cancelAnimationFrame(positionFrame);
+		positionFrame = requestAnimationFrame(trackPosition);
 	}
 
 	let searchDraft = $state<string | null>(null);
@@ -142,6 +264,18 @@
 		return `@${account.username}${formerText} · ${formatNumber(account.tweets)}`;
 	}
 </script>
+
+<svelte:window onscroll={schedulePosition} onresize={schedulePosition} />
+
+{#if view && showScrubber}
+	<TimelineScrubber
+		months={view.months}
+		offsets={view.offsets}
+		total={view.total}
+		{position}
+		onjump={jump}
+	/>
+{/if}
 
 <div class="flex flex-col gap-4">
 	<div class="flex flex-col gap-3">
@@ -294,14 +428,40 @@
 			</Empty.Content>
 		</Empty.Root>
 	{:else}
-		<div class="-mx-4 border-t sm:mx-0 sm:rounded-lg sm:border">
+		{#if previousCursor}
+			<div
+				class="flex flex-col items-center gap-2"
+				{@attach autoLoad(() => {
+					if (!loadPreviousFailed) void loadPrevious();
+				})}
+			>
+				{#if loadPreviousFailed}
+					<p class="text-sm text-destructive">The tweets above could not be loaded.</p>
+				{/if}
+				<Button variant="outline" onclick={loadPrevious} disabled={loadingPrevious}>
+					{#if loadingPrevious}<Spinner aria-hidden="true" />{/if}
+					{loadPreviousFailed
+						? 'Try again'
+						: view.filters.sort === 'oldest'
+							? 'Load older'
+							: 'Load newer'}
+				</Button>
+			</div>
+		{/if}
+
+		<div class="-mx-4 scroll-mt-14 border-t sm:mx-0 sm:rounded-lg sm:border" bind:this={list}>
 			{#each items as tweet (tweet.id)}
 				<TweetCard {tweet} />
 			{/each}
 		</div>
 
 		{#if nextCursor}
-			<div class="flex flex-col items-center gap-2" {@attach autoLoad}>
+			<div
+				class="flex flex-col items-center gap-2"
+				{@attach autoLoad(() => {
+					if (!loadMoreFailed) void loadMore();
+				})}
+			>
 				{#if loadMoreFailed}
 					<p class="text-sm text-destructive">More tweets could not be loaded.</p>
 				{/if}

@@ -62,7 +62,12 @@ export async function tweetStats(account: string, timeZone: string): Promise<Twe
 				select ${tweet.source} as name, count(*)::int as total
 				from ${tweet} where ${where} and ${tweet.source} <> ''
 				group by 1 order by 2 desc, 1 limit 5`),
-			listTweets({ ...DEFAULT_FILTERS, account, sort: 'likes' }, timeZone, null, TOP_TWEETS)
+			listTweets(
+				{ ...DEFAULT_FILTERS, account, sort: 'likes' },
+				timeZone,
+				{ cursor: null },
+				TOP_TWEETS
+			)
 		]);
 
 	const monthTotals = new Map(months.map((row) => [row.key, row.total]));

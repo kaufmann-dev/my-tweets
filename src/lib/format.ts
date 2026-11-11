@@ -63,3 +63,14 @@ export function monthRange(first: string, last: string): string[] {
 	}
 	return months;
 }
+
+const longMonth = new Intl.DateTimeFormat(undefined, {
+	month: 'long',
+	year: 'numeric',
+	timeZone: 'UTC'
+});
+
+/** Formats a calendar month (`YYYY-MM`) with the full month name. */
+export function formatMonthLong(isoMonth: string): string {
+	return longMonth.format(new Date(`${isoMonth}-01T00:00:00Z`));
+}

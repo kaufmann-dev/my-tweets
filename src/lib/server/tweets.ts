@@ -15,7 +15,13 @@ import {
 import { db } from '#lib/server/db/index.ts';
 import { tweet, tweetMedia, twitterAccount } from '#lib/server/db/schema.ts';
 import { searchTerms, type TweetFilters } from '#lib/tweet-filters.ts';
-import type { AccountOption, TweetMediaView, TweetPage } from '#lib/tweet-types.ts';
+import type {
+	AccountOption,
+	TweetMediaView,
+	TweetMonth,
+	TweetPage,
+	TweetView
+} from '#lib/tweet-types.ts';
 
 export const PAGE_SIZE = 30;
 
@@ -74,30 +80,55 @@ function toMediaView(media: typeof tweetMedia.$inferSelect): TweetMediaView | nu
 	};
 }
 
+export interface PagePosition {
+	cursor: string | null;
+	/** Start at this instant instead of a cursor (date sorts only): the first tweet of a month. */
+	at?: string | null;
+	/** `previous` returns the tweets just before the cursor in the sort order. */
+	direction?: 'next' | 'previous';
+}
+
+function cursorOf(item: TweetView, sort: TweetFilters['sort']): string {
+	const counted =
+		sort === 'likes' ? item.favoriteCount : sort === 'retweets' ? item.retweetCount : undefined;
+	return `${counted === undefined ? '' : `${counted}_`}${item.createdAt}_${item.id}`;
+}
+
 export async function listTweets(
 	filters: TweetFilters,
 	timeZone: string,
-	cursor: string | null,
+	{ cursor, at = null, direction = 'next' }: PagePosition,
 	limit = PAGE_SIZE
 ): Promise<TweetPage> {
 	const conditions = filterConditions(filters, timeZone);
 	// Ties in a like or retweet count fall back to newest first, so every sort is a total order.
 	const countColumn =
 		filters.sort === 'likes' || filters.sort === 'retweets' ? COUNT_SORTS[filters.sort] : null;
-	const ascending = filters.sort === 'oldest';
+	const backward = direction === 'previous';
+	// Rows are fetched walking away from the cursor; a backward walk runs against the sort order.
+	const ascending = (filters.sort === 'oldest') !== backward;
+	const after = (row: SQL, position: SQL) =>
+		ascending ? sql`${row} > ${position}` : sql`${row} < ${position}`;
 	const position = cursor ? CURSOR.exec(cursor) : null;
 	if (position) {
 		const [, counted, createdAt, id] = position;
 		if (countColumn && counted !== undefined)
 			conditions.push(
-				sql`(${countColumn}, ${tweet.createdAt}, ${tweet.id}) < (${counted}::int, ${createdAt}::timestamptz, ${id})`
+				after(
+					sql`(${countColumn}, ${tweet.createdAt}, ${tweet.id})`,
+					sql`(${counted}::int, ${createdAt}::timestamptz, ${id})`
+				)
 			);
 		else if (!countColumn)
 			conditions.push(
-				ascending
-					? sql`(${tweet.createdAt}, ${tweet.id}) > (${createdAt}::timestamptz, ${id})`
-					: sql`(${tweet.createdAt}, ${tweet.id}) < (${createdAt}::timestamptz, ${id})`
+				after(sql`(${tweet.createdAt}, ${tweet.id})`, sql`(${createdAt}::timestamptz, ${id})`)
 			);
+	} else if (at && !countColumn) {
+		conditions.push(
+			filters.sort === 'oldest'
+				? sql`${tweet.createdAt} >= ${at}::timestamptz`
+				: sql`${tweet.createdAt} < ${at}::timestamptz`
+		);
 	}
 
 	const order = ascending ? asc : desc;
@@ -120,10 +151,12 @@ export async function listTweets(
 		.from(tweet)
 		.innerJoin(twitterAccount, eq(twitterAccount.id, tweet.accountId))
 		.where(and(...conditions))
-		.orderBy(...(countColumn ? [desc(countColumn)] : []), order(tweet.createdAt), order(tweet.id))
+		.orderBy(...(countColumn ? [order(countColumn)] : []), order(tweet.createdAt), order(tweet.id))
 		.limit(limit + 1);
 
+	const more = rows.length > limit;
 	const pageRows = rows.slice(0, limit);
+	if (backward) pageRows.reverse();
 	const mediaRows =
 		pageRows.length > 0
 			? await db
@@ -146,28 +179,41 @@ export async function listTweets(
 			.map(toMediaView)
 			.filter((media) => media !== null)
 	}));
+	const first = items[0];
 	const last = items.at(-1);
-	const lastCount =
-		filters.sort === 'likes'
-			? last?.favoriteCount
-			: filters.sort === 'retweets'
-				? last?.retweetCount
-				: undefined;
+	// A page that started from a position may have tweets before it.
+	const startedInside = position !== null || (at !== null && !countColumn);
 	return {
 		items,
-		nextCursor:
-			rows.length > limit && last
-				? `${lastCount === undefined ? '' : `${lastCount}_`}${last.createdAt}_${last.id}`
-				: null
+		nextCursor: last && (backward || more) ? cursorOf(last, filters.sort) : null,
+		previousCursor:
+			first && (backward ? more : startedInside) ? cursorOf(first, filters.sort) : null
 	};
 }
 
-export async function countTweets(filters: TweetFilters, timeZone: string): Promise<number> {
-	const [row] = await db
-		.select({ total: count() })
-		.from(tweet)
-		.where(and(...filterConditions(filters, timeZone)));
-	return row?.total ?? 0;
+/** Tweet counts per calendar month in the viewer's time zone, oldest first. */
+export async function tweetMonths(filters: TweetFilters, timeZone: string): Promise<TweetMonth[]> {
+	const where = and(...filterConditions(filters, timeZone)) ?? sql`true`;
+	// The subquery names the month once; a repeated expression would get new parameter numbers.
+	const rows = await db.execute<{
+		month: string;
+		start: Date | string;
+		end: Date | string;
+		total: number;
+	}>(sql`
+		select to_char(m, 'YYYY-MM') as month,
+			(m at time zone ${timeZone}) as start,
+			((m + interval '1 month') at time zone ${timeZone}) as "end",
+			count(*)::int as total
+		from (select date_trunc('month', ${tweet.createdAt} at time zone ${timeZone}) as m
+			from ${tweet} where ${where}) months
+		group by m order by m`);
+	return rows.map((row) => ({
+		month: row.month,
+		start: new Date(row.start).toISOString(),
+		end: new Date(row.end).toISOString(),
+		total: row.total
+	}));
 }
 
 export async function listAccounts(): Promise<AccountOption[]> {

@@ -11,6 +11,8 @@ exports everything as one backup file.
 
 - Search, filter by account, type (tweets, replies, retweets, quotes), media and a date range (whole days
   in your time zone); sort by newest, oldest, most liked or most retweeted.
+- Jump through years of tweets with a date rail at the right edge, spaced by how much you tweeted
+  each month.
 - Stats per account or for everything: totals, tweets per month, time of day, day of week, who you
   replied to most and your most liked tweets.
 - Import new archives by uploading the zip from X. Tweets are merged by id and never removed.

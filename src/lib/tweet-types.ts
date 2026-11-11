@@ -26,8 +26,22 @@ export interface TweetView {
 }
 
 export interface TweetPage {
+	/** Always in the sort order, also for a `previous` page. */
 	items: TweetView[];
+	/** Continue after the last item; null at the end. */
 	nextCursor: string | null;
+	/** Continue before the first item; null when nothing can come before it. */
+	previousCursor: string | null;
+}
+
+/** Tweets in one calendar month of the viewer's time zone. */
+export interface TweetMonth {
+	/** `YYYY-MM`. */
+	month: string;
+	/** The month's first instant and the next month's first instant, as ISO timestamps. */
+	start: string;
+	end: string;
+	total: number;
 }
 
 export interface AccountOption {
