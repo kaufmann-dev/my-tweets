@@ -46,10 +46,9 @@ Requires Node 24, pnpm 11, and Podman.
    If the `postgres-sveltekit` container already exists, run `podman start postgres-sveltekit`
    instead of `podman run`.
 
-3. Apply the migrations and start the app:
+3. Start the app. Pending database migrations are applied automatically when the server starts.
 
    ```bash
-   pnpm drizzle-kit migrate
    pnpm dev
    ```
 
@@ -133,7 +132,7 @@ pnpm lint                # Prettier and ESLint
 pnpm test                # unit tests
 pnpm build               # production build into build/
 pnpm drizzle-kit generate # create a migration after changing src/lib/server/db/schema.ts
-pnpm drizzle-kit migrate  # apply migrations
+pnpm drizzle-kit migrate  # apply migrations without starting the app
 pnpm auth:schema         # regenerate the Better Auth schema after changing auth config
 ```
 
@@ -171,7 +170,6 @@ session. This is a single-user app, so restrict access in the Pocket ID client.
 - **Site type:** Dynamic (Node server started by `pnpm start`)
 - **Ports Exposes:** `3000`
 - **Persistent Storage:** a volume mounted at `/data` (media files and uploads)
-- **Post-Deployment Command:** `pnpm drizzle-kit migrate` (runs via `sh -c`)
 
 Environment variables:
 

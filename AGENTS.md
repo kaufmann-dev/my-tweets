@@ -16,7 +16,7 @@ pnpm legacy:bundle <backup-dir> <out.bundle.zip>   # Convert old archives/xlsx i
 ```
 
 - On a fresh clone, run `pnpm dev` or `pnpm build` once before `pnpm check`. Paraglide generates the gitignored `src/lib/paraglide` directory through its Vite plugin.
-- Always generate and run migrations through Drizzle Kit. Keep schema files and migrations aligned with the project config. `drizzle/0000_enable_pg_trgm.sql` is a hand-written custom migration (`drizzle-kit generate --custom`) that must stay first; the trigram index on `tweet.text` depends on it.
+- Always generate migrations with `pnpm drizzle-kit generate`; never hand-edit generated SQL. Keep schema files and migrations aligned with the project config. `drizzle/0000_enable_pg_trgm.sql` is a hand-written custom migration (`drizzle-kit generate --custom`) that must stay first; the trigram index on `tweet.text` depends on it.
 - `pnpm build` validates every required variable in `src/env.ts`; keep `.env` filled locally.
 
 ## Archive Data and Ingestion
@@ -272,4 +272,4 @@ For Coolify and Railpack:
 - In app code, read environment variables through `src/env.ts` and `$app/env/*`. In standalone scripts (seeds, migrations), read `process.env` and load `.env` only after checking that the file exists.
 - `ORIGIN` is both the Better Auth base URL and the origin `adapter-node` trusts for CSRF checks, so behind Coolify's proxy no `PROTOCOL_HEADER`/`HOST_HEADER` is needed.
 - Let Railpack handle the install phase unless a project-specific reason requires otherwise. `pnpm start` (`node build`) is the start command.
-- Run migrations as the Coolify post-deployment command (`pnpm drizzle-kit migrate`), never during the image build.
+- The server applies pending migrations from `drizzle/` in the `init` hook (`runMigrations` in `#lib/server/db/migrate.ts`) before any other startup query; keep it first. Never run migrations during the image build, and do not add a Coolify post-deployment migration: it needs a running container, which an unmigrated database prevents.

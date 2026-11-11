@@ -1,5 +1,6 @@
 import { building } from '$app/env';
 import { auth } from '#lib/server/auth.ts';
+import { runMigrations } from '#lib/server/db/migrate.ts';
 import { recoverInterruptedImports } from '#lib/server/imports.ts';
 import { safeRedirectTarget } from '#lib/redirect.ts';
 import { redirect } from '@sveltejs/kit';
@@ -14,7 +15,9 @@ import { deLocalizeUrl, getTextDirection } from '#lib/paraglide/runtime.js';
 import { paraglideMiddleware } from '#lib/paraglide/server.js';
 
 export const init: ServerInit = async () => {
-	if (!building) await recoverInterruptedImports();
+	if (building) return;
+	await runMigrations();
+	await recoverInterruptedImports();
 };
 
 const handleParaglide: Handle = ({ event, resolve }) =>
