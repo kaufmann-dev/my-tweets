@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Error %sveltekit.status% · My Tweets</title>
+		<style>
+			:root {
+				color-scheme: light dark;
+				--background: #ffffff;
+				--foreground: #171717;
+				--muted: #737373;
+				--border: #e5e5e5;
+			}
+			@media (prefers-color-scheme: dark) {
+				:root {
+					--background: #171717;
+					--foreground: #fafafa;
+					--muted: #a3a3a3;
+					--border: #2e2e2e;
+				}
+			}
+			body {
+				margin: 0;
+				min-height: 100dvh;
+				display: grid;
+				place-items: center;
+				padding: 2.5rem 1rem;
+				box-sizing: border-box;
+				background: var(--background);
+				color: var(--foreground);
+				font-family: system-ui, sans-serif;
+			}
+			main {
+				width: 100%;
+				max-width: 24rem;
+				border: 1px solid var(--border);
+				border-radius: 1rem;
+				padding: 1.5rem;
+			}
+			p {
+				color: var(--muted);
+			}
+			a {
+				color: inherit;
+			}
+		</style>
+	</head>
+	<body>
+		<main>
+			<p>Error %sveltekit.status%</p>
+			<h1>Something went wrong</h1>
+			<p>This page could not be loaded. Please try again in a moment.</p>
+			<a href="/">Back to tweets</a>
+		</main>
+	</body>
+</html>

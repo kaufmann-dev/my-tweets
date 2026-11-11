@@ -1,0 +1,275 @@
+# Repository Instructions
+
+## Build and Verification
+
+```bash
+pnpm install
+pnpm dev                     # Local development
+pnpm check                   # Run before finishing Svelte/TS changes
+pnpm lint                    # Prettier check + ESLint
+pnpm test                    # Vitest unit tests (src/**/*.spec.ts)
+pnpm build                   # Run before finishing deployment/routing/server changes
+pnpm auth:schema             # Regenerate the Better Auth schema after changing auth config or plugins
+pnpm drizzle-kit generate    # Generate schema migrations
+pnpm drizzle-kit migrate     # Execute migrations (drizzle-kit loads .env itself)
+pnpm legacy:bundle <backup-dir> <out.bundle.zip>   # Convert old archives/xlsx into an importable bundle
+```
+
+- On a fresh clone, run `pnpm dev` or `pnpm build` once before `pnpm check`. Paraglide generates the gitignored `src/lib/paraglide` directory through its Vite plugin.
+- Always generate and run migrations through Drizzle Kit. Keep schema files and migrations aligned with the project config. `drizzle/0000_enable_pg_trgm.sql` is a hand-written custom migration (`drizzle-kit generate --custom`) that must stay first; the trigram index on `tweet.text` depends on it.
+- `pnpm build` validates every required variable in `src/env.ts`; keep `.env` filled locally.
+
+## Archive Data and Ingestion
+
+- Never commit archive data, exports, or bundles. `data/` and `*.bundle.zip` are gitignored; tests build small synthetic zips with `writeTestZip` in `src/lib/server/ingest/test-helpers.ts`.
+- Keep `src/lib/server/ingest/*` (except `apply.ts`) runnable under plain Node type stripping: no `$app/*` or `#lib` imports, relative imports with `.ts` extensions, erasable TypeScript only (`erasableSyntaxOnly` is on). `scripts/legacy-bundle.ts` imports these modules directly.
+- Route every merge through `mergeTweet`/`mergeAccount` in `merge.ts`. Imports never delete tweets, deletion marks stick, archive data (`sourceRank` 2) outranks spreadsheet rows (1), and a newer `snapshotAt` wins within a rank.
+- The bundle format in `bundle.ts` is shared by the full export, the legacy CLI, and the import. Bump `BUNDLE_VERSION` for incompatible changes, and keep `tweets.json`/`accounts.json` at one JSON item per line; the reader parses them line by line.
+- Media files live in `DATA_DIR/media` and are named `<tweetId>-<mediaKey>.<ext>`; `MEDIA_FILE_NAME` in `media.ts` is also the path-traversal guard for `/media/[file]`.
+- Uploads arrive in 8 MiB chunks (`UPLOAD_CHUNK_BYTES` in `src/lib/upload.ts`); production `BODY_SIZE_LIMIT` must stay above it.
+- Imports run in the background inside the server process, one at a time; `recoverInterruptedImports` in the server `init` hook fails runs a restart interrupted.
+
+## Tooling
+
+- **Browser interaction**: Use `agent-browser` for UI checks when explicitly requested or genuinely necessary. Run `agent-browser --help` before first use in a task. Vitest is configured for unit tests; add automated browser tests when a project needs them.
+- **Svelte MCP**: Use before writing, reviewing, or refactoring Svelte or SvelteKit code.
+  - Call `list-sections` to identify relevant documentation.
+  - Fetch all relevant sections with `get-documentation`.
+  - After writing Svelte code, run `svelte-autofixer` until it reports no issues or suggestions.
+  - Generate a playground link only after the user asks for one, and only when the code was not written into the project.
+- **Svelte file-editor**: Use this subagent for Svelte component/module work if available.
+- When the Svelte MCP tools are not loaded, the same commands run as a CLI: `pnpm dlx @sveltejs/mcp list-sections`, `get-documentation "<paths>"`, and `svelte-autofixer <file> --async --svelte-version <version>`.
+
+## Technology Stack
+
+- **Framework**: SvelteKit 3 with `@sveltejs/adapter-node`
+- **UI**: Tailwind CSS and `shadcn-svelte`
+- **Icons**: `@lucide/svelte`
+- **Theme**: `mode-watcher`
+- **Database**: Drizzle with PostgreSQL
+- **Auth**: Better Auth with the `genericOAuth` plugin (OIDC via Pocket ID); email/password sign-in is disabled
+- **Forms**: SvelteKit remote functions (`form`) and Zod
+- **Email**: Resend and `better-svelte-email`
+- **i18n**: Paraglide
+- **Testing**: Vitest
+
+Do not use frameworks or libraries just because they are installed. Keep optional infrastructure out of the project until its feature is being implemented.
+
+## SvelteKit 3 Conventions
+
+This is a SvelteKit 3 project. Do not use SvelteKit 2 APIs.
+
+- **Config**: There is no `svelte.config.js`. Configure SvelteKit and the Svelte compiler through the `sveltekit({ ... })` plugin options in `vite.config.ts`. `compilerOptions.experimental.async` and `experimental.remoteFunctions` are enabled.
+- **`#lib`**: Import from `src/lib` with `#lib/...` (declared in `package.json` `imports`), including the file extension, e.g. `#lib/server/db/index.ts` or `#lib/utils.js`. `$lib` does not exist.
+- **Environment**: Declare variables in `src/env.ts` with `defineEnvVars` from `@sveltejs/kit/env`, then import them from `$app/env/private` or `$app/env/public`. Use `browser`, `building`, `dev`, and `version` from `$app/env`. Do not use `$env/*` or `$app/environment`.
+- **State and navigation**: Use `$app/state`, never `$app/stores`. Use `refreshAll` instead of `invalidateAll`, and `goto(url, { shallow: true, state })` instead of `pushState`/`replaceState`. `page.url` is read-only; copy it with `new URL(page.url.href)` before changing it.
+- **Paths**: Use `resolve` and `asset` from `$app/paths`, without a leading `/` for pathnames and assets (e.g. `resolve('blog/hello')`, `asset('logo.png')`). Route IDs keep the leading `/`. Signed-in pages live in the `(app)` group: use `resolve('/(app)/import')`, but add a query with the pathname form (``resolve(`?${query}`)``), because SvelteKit 3.2 keeps the `(app)` segment when a route ID carries a query.
+- **Types**: Import `Handle` and other hook types from `@sveltejs/kit/hooks`, param matcher helpers from `@sveltejs/kit/params`, and remote function types from `$app/server`.
+- **Errors and responses**: Call `error(status, message, extra?)` with a string message. Pass `{ external: true }` (or an origin list) to `redirect` for external URLs. Use `Response.json(...)` instead of the deprecated `json(...)`.
+- **Param matchers**: Declare all matchers in `src/params.ts` with `defineParams`; there is no `src/params/` directory.
+- **Server-only code**: Any `server` directory outside `src/routes` and any file with a `server` segment (e.g. `db.server.ts`, `server.ts`) is server-only.
+
+## Svelte Implementation Patterns
+
+Always treat this as a Svelte 5 project. Use runes, snippets, and fine-grained reactivity.
+
+### Core State and Props
+
+- Use `$props()` for component inputs. Always treat props as changeable.
+- Use `$state` only for values that must update the template, a derived value, or an effect.
+- Use `$state.raw` for large objects, API responses, or arrays that are reassigned entirely without deep mutation tracking.
+- Use `$derived` for computed state, including values derived from props.
+- Use `$derived.by` only when computation requires a multi-line function.
+
+### Reactivity and Effects ($effect)
+
+Never use `$effect` unless absolutely necessary (e.g., syncing with external non-Svelte libraries). Using `$effect` is almost always a sign the code should be refactored.
+
+**❌ Wrong: `$effect` for computed state**
+
+```svelte
+let rowsPerPageValue = $state(String(data.query.rows));
+$effect(() => {
+  rowsPerPageValue = String(data.query.rows);
+});
+```
+
+**✅ Right: Use `$derived`**
+
+```svelte
+let rowsPerPageValue = $derived(String(data.query.rows));
+```
+
+**❌ Wrong: `$effect` to react to state changes**
+
+```svelte
+let currentPage = $state(data.query.page);
+$effect(() => {
+  navUpdate({ page: currentPage });
+});
+<Select bind:value={currentPage} />
+```
+
+**✅ Right: React to events at the boundary**
+
+```svelte
+let currentPage = $state(data.query.page);
+<Select bind:value={currentPage} onValueChange={(value) => navUpdate({ page: value })} />
+```
+
+**❌ Wrong: `$effect` for type conversion with `bind:`**
+
+```svelte
+let query = $state({ rowsPerPage: 10 });
+let rowsPerPageValue = $state(String(query.rowsPerPage));
+$effect(() => {
+  const n = Number.parseInt(rowsPerPageValue, 10);
+  if (!Number.isFinite(n) || n === query.rowsPerPage) return;
+  query.rowsPerPage = n;
+});
+<Select bind:value={rowsPerPageValue} />
+```
+
+**✅ Right: Use getter/setter bindings**
+
+```svelte
+let query = $state({ rowsPerPage: 10 });
+<Select
+  bind:value={
+    () => query.rowsPerPage.toString(),
+    (value) => { query.rowsPerPage = Number.parseInt(value, 10); }
+  }
+/>
+```
+
+**Valid `$effect` Escape Hatch:**
+When an effect must write state, track the external source and keep reads of the written target out of the dependency set using `untrack`:
+
+```svelte
+import { untrack } from "svelte";
+
+let source = $state(0);
+let target = $state(0);
+
+$effect(() => {
+  const next = source + 1;
+  untrack(() => { target = next; });
+});
+```
+
+Always write effects as browser-only by nature. For global event listeners, use `<svelte:window>` or `<svelte:document>` rather than `onMount` or an effect.
+
+Use `createSubscriber` from `svelte/reactivity` to observe external sources. Use `$inspect.trace(label)` as the first line of a reactive block to debug update triggers.
+
+If an effect genuinely needs explicit dependency control and the project uses `runed`, consider `watch`. Do not add `runed` only to avoid a small refactor.
+
+### Component Architecture & Styling
+
+Use modern Svelte replacements over legacy features:
+
+- Use snippets and `{@render ...}` for reusable markup and component children.
+- Use `<DynamicComponent>` for dynamic component rendering.
+- Use `import Self from "./ThisComponent.svelte"` and `<Self>` for recursive rendering.
+- Use classes with `$state` fields for shared reactive logic when it fits better than stores.
+- Use `{@attach ...}` for new attachment code.
+- Use `clsx`-style arrays and objects in `class` attributes for conditional classes.
+- Use `onclick={...}` and other `on...` attributes for event listeners.
+- Use keyed `{#each}` blocks with stable object identifiers. Never use the index as a key. Avoid destructuring if mutating the item.
+- Use CSS custom properties for parent-to-child styling boundaries.
+- Use `createContext` for typed context instead of unscoped shared module state when state must be per request or per tree.
+- Use `await` expressions and `hydratable` where they simplify data loading; `compilerOptions.experimental.async` is already enabled in `vite.config.ts`.
+
+### Legacy Features to Avoid in New Code
+
+Avoid these legacy Svelte features in new or refactored code:
+
+- `export let`, `$$props`, `$$restProps`
+- `$: ` reactive blocks or assignments
+- `<slot>`, `$$slots`, `<svelte:fragment>`
+- `<svelte:component>` and `<svelte:self>`
+- `use:action`
+- `class:` directives
+- `on:` event attributes (e.g., `on:click`)
+
+## UI and Styling
+
+- **shadcn-svelte**: All components are already pre-installed in `src/lib/components/ui/`. **Never run the CLI to install components, and never delete unused shadcn components during codebase cleanup.**
+  - Never import components from a package named `shadcn-svelte`.
+  - Import them only from local `#lib/components/ui/...` paths (e.g. `#lib/components/ui/button/index.js`).
+  - Use local component source as the final source of truth once a component has been copied into the project.
+  - Customize with Tailwind classes using `class` and the local `cn()` helper.
+- Available shadcn-svelte components: `accordion alert alert-dialog aspect-ratio attachment avatar badge breadcrumb bubble button button-group calendar card carousel chart checkbox collapsible command context-menu dialog drawer dropdown-menu empty field hover-card input input-group input-otp item kbd label marker menubar message native-select navigation-menu pagination popover progress radio-group range-calendar resizable scroll-area select separator sheet sidebar skeleton slider sonner spinner switch table tabs textarea toggle toggle-group tooltip`. Build comboboxes from `popover` + `command`, date pickers from `popover` + `calendar`, and data tables from `table`. The `form` component is intentionally not installed.
+- **Icons**: Always use `@lucide/svelte` (e.g., `<Search class="size-4" />`).
+- **Theming**: Use `setMode("light" | "dark" | "system")` or `toggleMode` from `mode-watcher` for controls. Add `ModeWatcher` once in the root layout:
+  ```svelte
+  <script lang="ts">
+  	import { ModeWatcher } from 'mode-watcher';
+  	let { children } = $props();
+  </script>
+
+  <ModeWatcher />
+  {@render children()}
+  ```
+- **Visual styling**: Use the stock shadcn-svelte components and generated theme in `src/routes/layout.css`. Preserve their default shadows, animations, and keyboard focus styling. Use theme tokens and component variants for consistent styling.
+- ESLint checks `src/lib/components/ui`, including customized components. Keep exceptions limited to the stock Button link forwarding and ChartTooltip callback parameter; do not ignore the directory or disable unrelated rules.
+
+## Backend and Services
+
+- **Authentication**: Check current Better Auth documentation before implementing providers, plugins, adapters, session handling, or account flows.
+  - Every route except `/login` and `/api/auth/*` requires a session (`handleAccess` in `src/hooks.server.ts`). Still call `requireUser()` from `#lib/server/require-user.ts` at the start of every remote function, `+server.ts` handler, and protected server load.
+  - Sessions last seven days with `disableSessionRefresh`; sign-out uses RP-initiated logout. Admission is the identity provider's policy; do not add user allowlists.
+  - _Server_: `export const auth = betterAuth({ ... });`
+  - _Setup_: `sv` generated the server instance in `#lib/server/auth.ts` and the session hook in `src/hooks.server.ts`. Extend those files instead of creating new ones.
+  - _Hook_: `return svelteKitHandler({ event, resolve, auth, building });` with `building` from `$app/env`.
+  - _Client_: `export const authClient = createAuthClient();`
+  - _Cookies_: `plugins: [sveltekitCookies(getRequestEvent)]`
+- **Forms**: Always use remote functions with Zod. Follow the chain: `zod schema -> form(...) in a .remote.ts file -> shadcn-svelte field components`. Do not use Superforms, formsnap, or form actions for new forms.
+  - Spread the form onto `<form {...myForm}>` and every control's attributes from `myForm.fields.<name>.as('<type>')`. Never set `name` manually; submissions without `.as(...)` attributes are rejected.
+  - Render issues with `Field.Error errors={myForm.fields.<name>.issues()}` and mark invalid fields with `data-invalid`.
+  - Export shared schemas from a regular module (not the `.remote.ts` file) when the client needs them for `myForm.preflight(schema)`.
+  ```ts
+  // src/routes/newsletter.remote.ts
+  import { form } from '$app/server';
+  import { z } from 'zod';
+
+  export const subscribe = form(z.object({ email: z.email() }), async ({ email }) => {
+  	// ...
+  });
+  ```
+  ```svelte
+  <script lang="ts">
+  	import * as Field from '#lib/components/ui/field/index.js';
+  	import { Input } from '#lib/components/ui/input/index.js';
+  	import { Button } from '#lib/components/ui/button/index.js';
+  	import { subscribe } from './newsletter.remote';
+  </script>
+
+  <form {...subscribe}>
+  	<Field.Field data-invalid={!!subscribe.fields.email.issues()}>
+  		<Field.Label for="email">Email</Field.Label>
+  		<Input id="email" {...subscribe.fields.email.as('email')} />
+  		<Field.Error errors={subscribe.fields.email.issues()} />
+  	</Field.Field>
+  	<Button type="submit" disabled={!!subscribe.pending}>Subscribe</Button>
+  </form>
+  ```
+- **Email**: Use `better-svelte-email` for templates and Resend for delivery. Render components in server-only code, and send both HTML and plain text.
+  ```ts
+  import Renderer, { toPlainText } from 'better-svelte-email/render';
+  const html = await new Renderer().render(EmailTemplate, { props });
+  const text = toPlainText(html);
+  ```
+
+## Local Database and Deployment
+
+- **Database**: Use the `my_tweets` database in the manually managed Podman PostgreSQL container `postgres-sveltekit`, which other projects share; never use or drop its other databases. Treat production database provisioning as separate infrastructure.
+- **Debugging**: Keep deployment fixes scoped to the exact failing layer. Identify the failing command first in Coolify or Railpack before fixing it.
+
+For Coolify and Railpack:
+
+- If `pnpm-workspace.yaml` exists in a single-package app, keep a non-empty `packages` list with `.` included.
+- Use `engines.node` to pin compatible Node behavior when dependencies require a minimum patch version. Railpack reads it as the runtime version; do not duplicate it in `railpack.json`. SvelteKit 3 requires Node 22.17 or newer.
+- In app code, read environment variables through `src/env.ts` and `$app/env/*`. In standalone scripts (seeds, migrations), read `process.env` and load `.env` only after checking that the file exists.
+- `ORIGIN` is both the Better Auth base URL and the origin `adapter-node` trusts for CSRF checks, so behind Coolify's proxy no `PROTOCOL_HEADER`/`HOST_HEADER` is needed.
+- Let Railpack handle the install phase unless a project-specific reason requires otherwise. `pnpm start` (`node build`) is the start command.
+- Run migrations as the Coolify post-deployment command (`pnpm drizzle-kit migrate`), never during the image build.
