@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { lastDayOfMonth, monthRange } from './format.ts';
 import { linkify } from './linkify.ts';
+import { presentTweet } from './tweet-text.ts';
 import { safeRedirectTarget } from './redirect.ts';
 import { parseRange } from './server/range.ts';
 import {
@@ -91,6 +92,63 @@ describe('tweet filters', () => {
 
 	it('splits search terms', () => {
 		expect(searchTerms('  a  b a ')).toEqual(['a', 'b']);
+	});
+});
+
+describe('presentTweet', () => {
+	const base = {
+		kind: 'tweet' as const,
+		quote: false,
+		inReplyToScreenName: null,
+		inReplyToStatusId: null
+	};
+
+	it('moves the retweet prefix into a context line', () => {
+		expect(presentTweet({ ...base, kind: 'retweet', text: 'RT @someone: hello' })).toEqual({
+			text: 'hello',
+			contexts: [
+				{ type: 'retweet', targets: [{ username: 'someone', href: 'https://x.com/someone' }] }
+			]
+		});
+	});
+
+	it('moves leading mentions of a reply and links the parent tweet', () => {
+		const result = presentTweet({
+			...base,
+			kind: 'reply',
+			text: '@a @b hi @c',
+			inReplyToScreenName: 'A',
+			inReplyToStatusId: '42'
+		});
+		expect(result.text).toBe('hi @c');
+		expect(result.contexts[0]?.targets).toEqual([
+			{ username: 'a', href: 'https://x.com/a/status/42' },
+			{ username: 'b', href: 'https://x.com/b' }
+		]);
+	});
+
+	it('keeps a reply that is only mentions readable', () => {
+		const result = presentTweet({ ...base, kind: 'reply', text: '@a', inReplyToScreenName: 'a' });
+		expect(result.text).toBe('');
+		expect(result.contexts[0]?.targets.map((target) => target.username)).toEqual(['a']);
+	});
+
+	it('moves the link of a quote into a context line', () => {
+		expect(
+			presentTweet({ ...base, quote: true, text: 'look https://twitter.com/who/status/123?s=20' })
+		).toEqual({
+			text: 'look',
+			contexts: [
+				{ type: 'quote', targets: [{ username: 'who', href: 'https://x.com/who/status/123' }] }
+			]
+		});
+	});
+
+	it('leaves plain tweets alone', () => {
+		expect(presentTweet({ ...base, text: '@a is great' })).toEqual({
+			text: '@a is great',
+			contexts: []
+		});
 	});
 });
 
