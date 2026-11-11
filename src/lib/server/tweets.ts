@@ -8,7 +8,6 @@ import {
 	ilike,
 	inArray,
 	isNotNull,
-	isNull,
 	sql,
 	sum,
 	type SQL
@@ -24,7 +23,7 @@ function escapeLike(term: string): string {
 	return term.replace(/[\\%_]/g, (character) => `\\${character}`);
 }
 
-function filterConditions(filters: TweetFilters): SQL[] {
+function filterConditions(filters: TweetFilters, timeZone: string): SQL[] {
 	const conditions: SQL[] = searchTerms(filters.q).map((term) =>
 		ilike(tweet.text, `%${escapeLike(term)}%`)
 	);
@@ -39,14 +38,16 @@ function filterConditions(filters: TweetFilters): SQL[] {
 					.where(eq(tweetMedia.tweetId, tweet.id))
 			)
 		);
-	if (filters.deleted === 'only') conditions.push(isNotNull(tweet.deletedAt));
-	if (filters.deleted === 'exclude') conditions.push(isNull(tweet.deletedAt));
+	// Whole days in the viewer's time zone: from the start of `from` to the end of `to`.
+	if (filters.from)
+		conditions.push(
+			sql`${tweet.createdAt} >= (${filters.from}::date::timestamp at time zone ${timeZone})`
+		);
+	if (filters.to)
+		conditions.push(
+			sql`${tweet.createdAt} < ((${filters.to}::date + 1)::timestamp at time zone ${timeZone})`
+		);
 	return conditions;
-}
-
-function monthStart(month: string, offset: number): string {
-	const [year, monthNumber] = month.split('-').map(Number);
-	return new Date(Date.UTC(year, monthNumber - 1 + offset, 1)).toISOString();
 }
 
 const CURSOR = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)_(\d+)$/;
@@ -57,7 +58,6 @@ function toMediaView(media: typeof tweetMedia.$inferSelect): TweetMediaView | nu
 			key: media.mediaKey,
 			src: `/media/${media.fileName}`,
 			isVideo: media.contentType?.startsWith('video/') ?? false,
-			poster: media.kind === 'photo' ? null : media.remoteUrl,
 			local: true
 		};
 	}
@@ -66,25 +66,18 @@ function toMediaView(media: typeof tweetMedia.$inferSelect): TweetMediaView | nu
 		key: media.mediaKey,
 		src: media.remoteUrl,
 		isVideo: /\.mp4(\?|$)/.test(media.remoteUrl),
-		poster: null,
 		local: false
 	};
 }
 
 export async function listTweets(
 	filters: TweetFilters,
+	timeZone: string,
 	cursor: string | null,
 	limit = PAGE_SIZE
 ): Promise<TweetPage> {
 	const newestFirst = filters.sort === 'newest';
-	const conditions = filterConditions(filters);
-	if (filters.month) {
-		conditions.push(
-			newestFirst
-				? sql`${tweet.createdAt} < ${monthStart(filters.month, 1)}::timestamptz`
-				: sql`${tweet.createdAt} >= ${monthStart(filters.month, 0)}::timestamptz`
-		);
-	}
+	const conditions = filterConditions(filters, timeZone);
 	const position = cursor ? CURSOR.exec(cursor) : null;
 	if (position) {
 		const [, createdAt, id] = position;
@@ -108,7 +101,6 @@ export async function listTweets(
 			inReplyToStatusId: tweet.inReplyToStatusId,
 			favoriteCount: tweet.favoriteCount,
 			retweetCount: tweet.retweetCount,
-			deletedAt: tweet.deletedAt,
 			community: tweet.community,
 			source: tweet.source
 		})
@@ -136,7 +128,6 @@ export async function listTweets(
 	const items = pageRows.map((row) => ({
 		...row,
 		createdAt: row.createdAt.toISOString(),
-		deletedAt: row.deletedAt?.toISOString() ?? null,
 		media: mediaRows
 			.filter((media) => media.tweetId === row.id)
 			.map(toMediaView)
@@ -149,11 +140,11 @@ export async function listTweets(
 	};
 }
 
-export async function countTweets(filters: TweetFilters): Promise<number> {
+export async function countTweets(filters: TweetFilters, timeZone: string): Promise<number> {
 	const [row] = await db
 		.select({ total: count() })
 		.from(tweet)
-		.where(and(...filterConditions(filters)));
+		.where(and(...filterConditions(filters, timeZone)));
 	return row?.total ?? 0;
 }
 
@@ -177,7 +168,6 @@ export async function archiveStats() {
 	const [tweets] = await db
 		.select({
 			total: count(),
-			deleted: count(tweet.deletedAt),
 			first: sql<Date | null>`min(${tweet.createdAt})`.mapWith(tweet.createdAt),
 			last: sql<Date | null>`max(${tweet.createdAt})`.mapWith(tweet.createdAt)
 		})
@@ -192,7 +182,6 @@ export async function archiveStats() {
 	const [accounts] = await db.select({ total: count() }).from(twitterAccount);
 	return {
 		tweets: tweets?.total ?? 0,
-		deleted: tweets?.deleted ?? 0,
 		first: tweets?.first ? new Date(tweets.first).toISOString() : null,
 		last: tweets?.last ? new Date(tweets.last).toISOString() : null,
 		mediaFiles: media?.files ?? 0,

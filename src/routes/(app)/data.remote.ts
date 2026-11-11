@@ -8,20 +8,23 @@ import {
 	listAccounts,
 	listTweets as listTweetPage
 } from '#lib/server/tweets.ts';
-import { tweetFiltersSchema } from '#lib/tweet-filters.ts';
+import { timeZoneSchema, tweetFiltersSchema } from '#lib/tweet-filters.ts';
 
 export const listTweets = query(
-	tweetFiltersSchema.extend({ cursor: z.string().max(100).nullable() }),
-	async ({ cursor, ...filters }) => {
+	tweetFiltersSchema.extend({ timeZone: timeZoneSchema, cursor: z.string().max(100).nullable() }),
+	async ({ timeZone, cursor, ...filters }) => {
 		requireUser();
-		return listTweetPage(filters, cursor);
+		return listTweetPage(filters, timeZone, cursor);
 	}
 );
 
-export const countTweets = query(tweetFiltersSchema, async (filters) => {
-	requireUser();
-	return countMatchingTweets(filters);
-});
+export const countTweets = query(
+	tweetFiltersSchema.extend({ timeZone: timeZoneSchema }),
+	async ({ timeZone, ...filters }) => {
+		requireUser();
+		return countMatchingTweets(filters, timeZone);
+	}
+);
 
 export const getAccounts = query(async () => {
 	requireUser();

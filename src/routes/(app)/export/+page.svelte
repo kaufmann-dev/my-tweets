@@ -24,10 +24,6 @@
 					<dd class="font-medium tabular-nums">{formatNumber(stats.tweets)}</dd>
 				</div>
 				<div>
-					<dt class="text-muted-foreground">Deleted on X</dt>
-					<dd class="font-medium tabular-nums">{formatNumber(stats.deleted)}</dd>
-				</div>
-				<div>
 					<dt class="text-muted-foreground">Accounts</dt>
 					<dd class="font-medium tabular-nums">{formatNumber(stats.accounts)}</dd>
 				</div>

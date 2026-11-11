@@ -31,14 +31,17 @@
 		retweet: 'Retweets'
 	};
 
+	// Date ranges are whole days in the viewer's time zone.
+	const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
 	const filters = $derived(filtersFromParams(page.url.searchParams));
 	const filterKey = $derived(filtersToParams(filters).toString());
 	const hasFilters = $derived(filterKey !== '');
 
 	const [firstPage, total, accounts, stats] = $derived(
 		await Promise.all([
-			listTweets({ ...filters, cursor: null }),
-			countTweets(filters),
+			listTweets({ ...filters, timeZone, cursor: null }),
+			countTweets({ ...filters, timeZone }),
 			getAccounts(),
 			getArchiveStats()
 		])
@@ -59,7 +62,7 @@
 		loadingMore = true;
 		loadMoreFailed = false;
 		try {
-			const next = await listTweets({ ...filters, cursor });
+			const next = await listTweets({ ...filters, timeZone, cursor });
 			if (key === filterKey) extra = { key, pages: [...extraPages, next] };
 		} catch {
 			loadMoreFailed = true;
@@ -118,27 +121,32 @@
 			/>
 		</InputGroup.Root>
 
-		<ToggleGroup.Root
-			type="single"
-			variant="outline"
-			size="sm"
-			aria-label="Tweet type"
-			bind:value={
-				() => filters.kind,
-				(value) => {
-					if (value) void update({ kind: value as TweetFilters['kind'] });
-				}
-			}
-		>
-			{#each KIND_FILTERS as kind (kind)}
-				<ToggleGroup.Item value={kind}>{KIND_LABELS[kind]}</ToggleGroup.Item>
-			{/each}
-		</ToggleGroup.Root>
-
 		<div class="flex flex-wrap items-center gap-2">
-			<NativeSelect.Root
+			<ToggleGroup.Root
+				type="single"
+				spacing={0.5}
 				size="sm"
-				class="max-w-full min-w-0"
+				class="h-8 rounded-2xl bg-input/50 p-0.5"
+				aria-label="Tweet type"
+				bind:value={
+					() => filters.kind,
+					(value) => {
+						if (value) void update({ kind: value as TweetFilters['kind'] });
+					}
+				}
+			>
+				{#each KIND_FILTERS as kind (kind)}
+					<ToggleGroup.Item
+						value={kind}
+						class="px-3 data-[state=on]:bg-background dark:data-[state=on]:bg-input"
+					>
+						{KIND_LABELS[kind]}
+					</ToggleGroup.Item>
+				{/each}
+			</ToggleGroup.Root>
+
+			<NativeSelect.Root
+				class="min-w-0 flex-1 basis-56"
 				aria-label="Account"
 				value={filters.account}
 				onchange={(event) => update({ account: event.currentTarget.value })}
@@ -148,21 +156,32 @@
 					<NativeSelect.Option value={account.id}>{accountLabel(account)}</NativeSelect.Option>
 				{/each}
 			</NativeSelect.Root>
+		</div>
+
+		<div class="flex flex-wrap items-center gap-2">
+			<div class="flex items-center gap-1.5">
+				<Input
+					type="date"
+					class="w-auto"
+					aria-label="From date"
+					title="From date"
+					max={filters.to || undefined}
+					value={filters.from}
+					onchange={(event) => update({ from: event.currentTarget.value })}
+				/>
+				<span class="text-sm text-muted-foreground" aria-hidden="true">–</span>
+				<Input
+					type="date"
+					class="w-auto"
+					aria-label="To date"
+					title="To date"
+					min={filters.from || undefined}
+					value={filters.to}
+					onchange={(event) => update({ to: event.currentTarget.value })}
+				/>
+			</div>
 
 			<NativeSelect.Root
-				size="sm"
-				aria-label="Deleted tweets"
-				value={filters.deleted}
-				onchange={(event) =>
-					update({ deleted: event.currentTarget.value as TweetFilters['deleted'] })}
-			>
-				<NativeSelect.Option value="include">Include deleted</NativeSelect.Option>
-				<NativeSelect.Option value="only">Only deleted</NativeSelect.Option>
-				<NativeSelect.Option value="exclude">Hide deleted</NativeSelect.Option>
-			</NativeSelect.Root>
-
-			<NativeSelect.Root
-				size="sm"
 				aria-label="Sort order"
 				value={filters.sort}
 				onchange={(event) => update({ sort: event.currentTarget.value as TweetFilters['sort'] })}
@@ -171,23 +190,9 @@
 				<NativeSelect.Option value="oldest">Oldest first</NativeSelect.Option>
 			</NativeSelect.Root>
 
-			<Input
-				type="month"
-				class="h-7 w-auto"
-				aria-label={filters.sort === 'newest'
-					? 'Show tweets up to month'
-					: 'Show tweets from month'}
-				title={filters.sort === 'newest'
-					? 'Show tweets up to this month'
-					: 'Show tweets from this month'}
-				value={filters.month}
-				onchange={(event) => update({ month: event.currentTarget.value })}
-			/>
-
-			<div class="flex items-center gap-2">
+			<div class="flex h-8 items-center gap-2 px-1">
 				<Switch
 					id="with-media"
-					size="sm"
 					bind:checked={() => filters.media, (media) => void update({ media })}
 				/>
 				<Label for="with-media" class="text-sm font-normal">With media</Label>

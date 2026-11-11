@@ -1,23 +1,36 @@
 import { z } from 'zod';
 
 export const KIND_FILTERS = ['all', 'tweet', 'reply', 'retweet'] as const;
-export const DELETED_FILTERS = ['include', 'only', 'exclude'] as const;
 export const SORTS = ['newest', 'oldest'] as const;
+
+const isoDay = z
+	.string()
+	.regex(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/)
+	.or(z.literal(''))
+	.default('');
 
 export const tweetFiltersSchema = z.object({
 	q: z.string().trim().max(200).default(''),
 	account: z.string().max(120).default(''),
 	kind: z.enum(KIND_FILTERS).default('all'),
 	media: z.boolean().default(false),
-	deleted: z.enum(DELETED_FILTERS).default('include'),
-	/** `YYYY-MM`: newest-first lists start at the end of this month, oldest-first at its start. */
-	month: z
-		.string()
-		.regex(/^\d{4}-(0[1-9]|1[0-2])$/)
-		.or(z.literal(''))
-		.default(''),
+	/** Inclusive date range (`YYYY-MM-DD`) in the viewer's time zone; empty means unbounded. */
+	from: isoDay,
+	to: isoDay,
 	sort: z.enum(SORTS).default('newest')
 });
+
+function isTimeZone(value: string): boolean {
+	try {
+		new Intl.DateTimeFormat('en', { timeZone: value });
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/** IANA time zone the date range is interpreted in; sent by the browser, not stored in the URL. */
+export const timeZoneSchema = z.string().max(64).refine(isTimeZone).default('UTC');
 
 export type TweetFilters = z.infer<typeof tweetFiltersSchema>;
 

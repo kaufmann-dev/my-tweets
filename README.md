@@ -9,8 +9,8 @@ archive downloads (every layout since 2019) and old spreadsheet exports into one
 timeline, keeps tweets that were later deleted on X, serves the archived photos and videos, and
 exports everything as one backup file.
 
-- Search, filter by account, type (tweets, replies, retweets), media and deletion state, and jump
-  to any month.
+- Search, filter by account, type (tweets, replies, retweets), media and a date range (whole days
+  in your time zone), newest or oldest first.
 - Import new archives by uploading the zip from X. Tweets are merged by id and never removed.
 - Export the whole archive as a zip with all media, which can be imported again to restore it, or
   as a single JSON file.

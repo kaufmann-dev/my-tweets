@@ -4,7 +4,6 @@ export interface TweetMediaView {
 	key: string;
 	src: string;
 	isVideo: boolean;
-	poster: string | null;
 	local: boolean;
 }
 
@@ -19,7 +18,6 @@ export interface TweetView {
 	inReplyToStatusId: string | null;
 	favoriteCount: number;
 	retweetCount: number;
-	deletedAt: string | null;
 	community: boolean;
 	source: string | null;
 	media: TweetMediaView[];

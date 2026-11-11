@@ -6,7 +6,8 @@ import {
 	DEFAULT_FILTERS,
 	filtersFromParams,
 	filtersToParams,
-	searchTerms
+	searchTerms,
+	timeZoneSchema
 } from './tweet-filters.ts';
 
 describe('safeRedirectTarget', () => {
@@ -57,17 +58,25 @@ describe('tweet filters', () => {
 			q: 'cats',
 			kind: 'reply' as const,
 			media: true,
-			month: '2021-06'
+			from: '2021-06-01',
+			to: '2021-06-30'
 		};
 		expect(filtersFromParams(filtersToParams(filters))).toEqual(filters);
 		expect(filtersToParams(DEFAULT_FILTERS).toString()).toBe('');
 	});
 
 	it('ignores invalid values', () => {
-		expect(filtersFromParams(new URLSearchParams('kind=nope&month=2021-13&sort=oldest'))).toEqual({
+		expect(
+			filtersFromParams(new URLSearchParams('kind=nope&from=2021-13-01&to=2021-02-30x&sort=oldest'))
+		).toEqual({
 			...DEFAULT_FILTERS,
 			sort: 'oldest'
 		});
+	});
+
+	it('accepts IANA time zones only', () => {
+		expect(timeZoneSchema.safeParse('Europe/Berlin').success).toBe(true);
+		expect(timeZoneSchema.safeParse("UTC'; drop table tweet; --").success).toBe(false);
 	});
 
 	it('splits search terms', () => {

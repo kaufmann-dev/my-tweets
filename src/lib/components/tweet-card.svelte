@@ -1,7 +1,6 @@
 <script lang="ts">
 	import Heart from '@lucide/svelte/icons/heart';
 	import Repeat2 from '@lucide/svelte/icons/repeat-2';
-	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { formatDateTime, formatNumber, tweetUrl } from '#lib/format.ts';
 	import { linkify } from '#lib/linkify.ts';
@@ -21,27 +20,14 @@
 			<span class="truncate font-medium">{tweet.displayName}</span>
 			<span class="truncate text-sm text-muted-foreground">@{tweet.username}</span>
 		</div>
-		<a
-			href={tweetUrl(tweet.id)}
-			target="_blank"
-			rel="external noopener noreferrer"
-			class="flex shrink-0 items-center gap-1 text-sm text-muted-foreground hover:text-foreground hover:underline"
-			title="Open on X"
-		>
-			<time datetime={tweet.createdAt}>{formatDateTime(tweet.createdAt)}</time>
-			<ExternalLink class="size-3.5" aria-hidden="true" />
-			<span class="sr-only">Open on X</span>
-		</a>
+		<time datetime={tweet.createdAt} class="shrink-0 text-sm text-muted-foreground">
+			{formatDateTime(tweet.createdAt)}
+		</time>
 	</header>
 
-	{#if kindLabel || tweet.deletedAt || tweet.community}
+	{#if kindLabel || tweet.community}
 		<div class="flex flex-wrap items-center gap-1.5">
 			{#if kindLabel}<Badge variant="secondary">{kindLabel}</Badge>{/if}
-			{#if tweet.deletedAt}
-				<Badge variant="destructive" title={`Deleted ${formatDateTime(tweet.deletedAt)}`}>
-					Deleted
-				</Badge>
-			{/if}
 			{#if tweet.community}<Badge variant="outline">Community</Badge>{/if}
 		</div>
 	{/if}
@@ -81,13 +67,14 @@
 		<div class={['grid gap-1.5', tweet.media.length > 1 && 'grid-cols-2']}>
 			{#each tweet.media as media (media.key)}
 				{#if media.isVideo}
+					<!-- Loading metadata and seeking to 0.1 s shows the first frame as the preview, without
+					     relying on thumbnails hosted by X, which disappear with deleted tweets. -->
 					<!-- svelte-ignore a11y_media_has_caption -->
 					<video
 						class="max-h-[32rem] w-full rounded-lg border bg-muted"
-						src={media.src}
-						poster={media.poster ?? undefined}
+						src={`${media.src}#t=0.1`}
 						controls
-						preload="none"
+						preload="metadata"
 						playsinline
 					></video>
 				{:else}
