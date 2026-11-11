@@ -44,7 +44,14 @@ export const tweet = pgTable(
 		community: boolean('community').notNull().default(false),
 		sourceRank: smallint('source_rank').notNull(),
 		snapshotAt: timestamptz('snapshot_at').notNull(),
-		raw: jsonb('raw').notNull()
+		raw: jsonb('raw').notNull(),
+		/**
+		 * Id of the tweet this one quotes. No source marks quotes; in all of them (and on X itself) a
+		 * quote is a tweet whose text ends with a link to another tweet, so the database derives it.
+		 */
+		quotedStatusId: text('quoted_status_id').generatedAlwaysAs(
+			sql`case when kind <> 'retweet' then substring("text" from 'https?://(?:mobile\\.)?(?:twitter|x)\\.com/\\w+/status/(\\d+)\\S*\\s*$') end`
+		)
 	},
 	(table) => [
 		index('tweet_created_at_id_idx').on(table.createdAt.desc(), table.id.desc()),

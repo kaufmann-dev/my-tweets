@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
-export const KIND_FILTERS = ['all', 'tweet', 'reply', 'retweet'] as const;
+/** `quote` cuts across the others: a quote is also a tweet or a reply. */
+export const KIND_FILTERS = ['all', 'tweet', 'reply', 'retweet', 'quote'] as const;
 export const SORTS = ['newest', 'oldest', 'likes', 'retweets'] as const;
 
 const isoDay = z

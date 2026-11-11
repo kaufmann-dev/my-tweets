@@ -69,6 +69,7 @@
 					{ label: 'Original tweets', value: formatNumber(stats.originals) },
 					{ label: 'Replies', value: formatNumber(stats.replies) },
 					{ label: 'Retweets', value: formatNumber(stats.retweets) },
+					{ label: 'Quotes', value: formatNumber(stats.quotes) },
 					{ label: 'With media', value: formatNumber(stats.withMedia) },
 					{ label: 'Likes received', value: formatNumber(stats.likes) },
 					{ label: 'Retweets received', value: formatNumber(stats.retweeted) },

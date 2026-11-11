@@ -24,6 +24,7 @@ pnpm legacy:bundle <backup-dir> <out.bundle.zip>   # Convert old archives/xlsx i
 - Never commit archive data, exports, or bundles. `data/` and `*.bundle.zip` are gitignored; tests build small synthetic zips with `writeTestZip` in `src/lib/server/ingest/test-helpers.ts`.
 - Keep `src/lib/server/ingest/*` (except `apply.ts`) runnable under plain Node type stripping: no `$app/*` or `#lib` imports, relative imports with `.ts` extensions, erasable TypeScript only (`erasableSyntaxOnly` is on). `scripts/legacy-bundle.ts` imports these modules directly.
 - Route every merge through `mergeTweet`/`mergeAccount` in `merge.ts`. Imports never delete tweets, deletion marks stick, archive data (`sourceRank` 2) outranks spreadsheet rows (1), and a newer `snapshotAt` wins within a rank.
+- Quote tweets are not a `kind`: no source marks them. `tweet.quoted_status_id` is a generated column that takes the id from a tweet link at the end of the text; change the rule there, not in the importers.
 - The bundle format in `bundle.ts` is shared by the full export, the legacy CLI, and the import. Bump `BUNDLE_VERSION` for incompatible changes, and keep `tweets.json`/`accounts.json` at one JSON item per line; the reader parses them line by line.
 - Media files live in `DATA_DIR/media` and are named `<tweetId>-<mediaKey>.<ext>`; `MEDIA_FILE_NAME` in `media.ts` is also the path-traversal guard for `/media/[file]`.
 - Uploads arrive in 8 MiB chunks (`UPLOAD_CHUNK_BYTES` in `src/lib/upload.ts`); production `BODY_SIZE_LIMIT` must stay above it.

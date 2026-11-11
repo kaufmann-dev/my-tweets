@@ -52,9 +52,10 @@
 		</time>
 	</header>
 
-	{#if kindLabel || tweet.community}
+	{#if kindLabel || tweet.quote || tweet.community}
 		<div class="flex flex-wrap items-center gap-1.5">
 			{#if kindLabel}<Badge variant="secondary">{kindLabel}</Badge>{/if}
+			{#if tweet.quote}<Badge variant="secondary">Quote</Badge>{/if}
 			{#if tweet.community}<Badge variant="outline">Community</Badge>{/if}
 		</div>
 	{/if}

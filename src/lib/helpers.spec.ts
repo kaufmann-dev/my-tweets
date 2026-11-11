@@ -80,6 +80,10 @@ describe('tweet filters', () => {
 		expect(timeZoneSchema.safeParse("UTC'; drop table tweet; --").success).toBe(false);
 	});
 
+	it('accepts the quote type', () => {
+		expect(filtersFromParams(new URLSearchParams('kind=quote')).kind).toBe('quote');
+	});
+
 	it('accepts the like and retweet sorts', () => {
 		expect(filtersFromParams(new URLSearchParams('sort=likes')).sort).toBe('likes');
 		expect(filtersFromParams(new URLSearchParams('sort=retweets')).sort).toBe('retweets');

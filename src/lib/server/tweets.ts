@@ -28,7 +28,8 @@ function filterConditions(filters: TweetFilters, timeZone: string): SQL[] {
 		ilike(tweet.text, `%${escapeLike(term)}%`)
 	);
 	if (filters.account) conditions.push(eq(tweet.accountId, filters.account));
-	if (filters.kind !== 'all') conditions.push(eq(tweet.kind, filters.kind));
+	if (filters.kind === 'quote') conditions.push(isNotNull(tweet.quotedStatusId));
+	else if (filters.kind !== 'all') conditions.push(eq(tweet.kind, filters.kind));
 	if (filters.media)
 		conditions.push(
 			exists(
@@ -108,6 +109,7 @@ export async function listTweets(
 			createdAt: tweet.createdAt,
 			text: tweet.text,
 			kind: tweet.kind,
+			quote: sql<boolean>`${tweet.quotedStatusId} is not null`,
 			inReplyToScreenName: tweet.inReplyToScreenName,
 			inReplyToStatusId: tweet.inReplyToStatusId,
 			favoriteCount: tweet.favoriteCount,

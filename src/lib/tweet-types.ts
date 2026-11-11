@@ -14,6 +14,8 @@ export interface TweetView {
 	createdAt: string;
 	text: string;
 	kind: 'tweet' | 'reply' | 'retweet';
+	/** Quotes another tweet; the quoted tweet itself is only a link in the text. */
+	quote: boolean;
 	inReplyToScreenName: string | null;
 	inReplyToStatusId: string | null;
 	favoriteCount: number;
@@ -46,6 +48,7 @@ export interface TweetStats {
 	originals: number;
 	replies: number;
 	retweets: number;
+	quotes: number;
 	/** Likes and retweets the tweets received. */
 	likes: number;
 	retweeted: number;

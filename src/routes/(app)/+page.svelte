@@ -31,7 +31,8 @@
 		all: 'All',
 		tweet: 'Tweets',
 		reply: 'Replies',
-		retweet: 'Retweets'
+		retweet: 'Retweets',
+		quote: 'Quotes'
 	};
 
 	const SORT_LABELS: Record<TweetFilters['sort'], string> = {

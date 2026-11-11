@@ -1,0 +1,1 @@
+ALTER TABLE "tweet" ADD COLUMN "quoted_status_id" text GENERATED ALWAYS AS (case when kind <> 'retweet' then substring("text" from 'https?://(?:mobile\.)?(?:twitter|x)\.com/\w+/status/(\d+)\S*\s*$') end) STORED;

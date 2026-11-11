@@ -20,6 +20,7 @@ export async function tweetStats(account: string, timeZone: string): Promise<Twe
 				originals: number;
 				replies: number;
 				retweets: number;
+				quotes: number;
 				likes: number;
 				retweeted: number;
 				active_days: number;
@@ -28,6 +29,7 @@ export async function tweetStats(account: string, timeZone: string): Promise<Twe
 					(count(*) filter (where ${tweet.kind} = 'tweet'))::int as originals,
 					(count(*) filter (where ${tweet.kind} = 'reply'))::int as replies,
 					(count(*) filter (where ${tweet.kind} = 'retweet'))::int as retweets,
+					count(${tweet.quotedStatusId})::int as quotes,
 					coalesce(sum(${tweet.favoriteCount}), 0)::int as likes,
 					coalesce(sum(${tweet.retweetCount}), 0)::int as retweeted,
 					count(distinct ${local}::date)::int as active_days
@@ -75,6 +77,7 @@ export async function tweetStats(account: string, timeZone: string): Promise<Twe
 		originals: summary?.originals ?? 0,
 		replies: summary?.replies ?? 0,
 		retweets: summary?.retweets ?? 0,
+		quotes: summary?.quotes ?? 0,
 		likes: summary?.likes ?? 0,
 		retweeted: summary?.retweeted ?? 0,
 		activeDays: summary?.active_days ?? 0,

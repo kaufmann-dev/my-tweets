@@ -9,7 +9,7 @@ archive downloads (every layout since 2019) and old spreadsheet exports into one
 timeline, keeps tweets that were later deleted on X, serves the archived photos and videos, and
 exports everything as one backup file.
 
-- Search, filter by account, type (tweets, replies, retweets), media and a date range (whole days
+- Search, filter by account, type (tweets, replies, retweets, quotes), media and a date range (whole days
   in your time zone); sort by newest, oldest, most liked or most retweeted.
 - Stats per account or for everything: totals, tweets per month, time of day, day of week, who you
   replied to most and your most liked tweets.
