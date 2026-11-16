@@ -23,7 +23,7 @@ Every page requires signing in through an OpenID Connect provider (Pocket ID).
 
 ## Run Locally
 
-Requires Node 24, pnpm 11, and Podman.
+Requires Node 26, pnpm 12, and Podman.
 
 1. Install dependencies and create `.env` from the example:
 
