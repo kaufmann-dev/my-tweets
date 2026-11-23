@@ -186,15 +186,15 @@
 										</p>
 									{/if}
 								</Table.Cell>
-								<Table.Cell class="text-right tabular-nums"
-									>{formatNumber(item.tweetsAdded)}</Table.Cell
-								>
-								<Table.Cell class="text-right tabular-nums"
-									>{formatNumber(item.tweetsUpdated)}</Table.Cell
-								>
-								<Table.Cell class="text-right tabular-nums"
-									>{formatNumber(item.mediaAdded)}</Table.Cell
-								>
+								<Table.Cell class="text-right tabular-nums">
+									{formatNumber(item.tweetsAdded)}
+								</Table.Cell>
+								<Table.Cell class="text-right tabular-nums">
+									{formatNumber(item.tweetsUpdated)}
+								</Table.Cell>
+								<Table.Cell class="text-right tabular-nums">
+									{formatNumber(item.mediaAdded)}
+								</Table.Cell>
 								<Table.Cell class="whitespace-nowrap">{formatDateTime(item.startedAt)}</Table.Cell>
 							</Table.Row>
 						{/each}

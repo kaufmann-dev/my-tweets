@@ -81,8 +81,10 @@
 								class="ml-1 text-foreground hover:underline"
 								href={target.href}
 								target="_blank"
-								rel="external noopener noreferrer">@{target.username}</a
+								rel="external noopener noreferrer"
 							>
+								@{target.username}
+							</a>
 						{/each}
 					</span>
 				</p>
@@ -99,8 +101,10 @@
 						href={segment.href}
 						target="_blank"
 						rel="external noopener noreferrer"
-						class="text-sky-700 hover:underline dark:text-sky-400">{segment.value}</a
+						class="text-sky-700 hover:underline dark:text-sky-400"
 					>
+						{segment.value}
+					</a>
 				{:else}
 					{segment.value}
 				{/if}
